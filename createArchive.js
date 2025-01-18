@@ -1,7 +1,7 @@
-const AdmZip = require('adm-zip');
-const fs = require('fs');
+const AdmZip = require("adm-zip");
+const fs = require("fs");
 
-const dist = './dist';
+const dist = "./dist";
 
 async function createZipArchive() {
   const zip = new AdmZip();
@@ -10,8 +10,8 @@ async function createZipArchive() {
     fs.mkdirSync(dist);
   }
 
-  const outputFile = './dist/app.zip';
-  zip.addLocalFolder('./build/app', '');
+  const outputFile = "./dist/app.zip";
+  zip.addLocalFolder("./build", "app");
   zip.writeZip(outputFile);
   console.log(`Created ${outputFile} successfully`);
 }
