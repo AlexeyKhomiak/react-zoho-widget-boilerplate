@@ -1,0 +1,148 @@
+body {
+  font-family: Arial, sans-serif;
+  background-color: #f4f4f9;
+  margin: 0;
+  padding: 0;
+}
+
+.dashboard-container {
+  padding: 20px;
+}
+
+.dashboard-title {
+  text-align: center;
+  margin-bottom: 30px;
+  color: #333;
+}
+
+.dashboard-controls {
+  display: flex;
+  justify-content: space-between; /* Align blocks side by side */
+  align-items: flex-start;
+  gap: 20px; /* Add spacing between blocks */
+  margin-bottom: 30px;
+}
+
+.dashboard-controls-vertical {
+  display: flex;
+  flex-direction: column; /* Arrange blocks vertically */
+  gap: 20px; /* Add spacing between blocks */
+  margin-bottom: 30px;
+}
+
+.filters-container,
+.upload-container {
+  flex: 1;
+  background: #f9f9f9;
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.small-card {
+  max-width: 400px; /* Adjust the width of the cards */
+  flex: 1; /* Ensure both blocks take equal space */
+  margin: 0 auto; /* Center the cards */
+}
+
+.section-title {
+  margin-bottom: 15px;
+  color: #555;
+}
+
+.label {
+  display: block;
+  margin-bottom: 10px;
+}
+
+.input {
+  /* width: 100%; */
+  padding: 8px;
+  margin-bottom: 15px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.button {
+  width: 100%;
+  padding: 10px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.3s ease;
+}
+
+.button-refresh {
+  background: #007bff;
+  color: #fff;
+}
+
+.button-upload {
+  background: #28a745;
+  color: #fff;
+}
+
+.button:hover {
+  opacity: 0.9;
+}
+
+.message {
+  text-align: center;
+  color: #555;
+}
+
+.chart-container {
+  margin-top: 30px;
+  height: 500px; /* Ensure the chart has a fixed height */
+  width: 90%; /* Adjust the width to make it larger */
+  margin: 0 auto;
+  background: #fff;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+canvas {
+  display: block;
+  width: 100%; /* Ensure the canvas fills the container */
+  height: 100%; /* Ensure the canvas fills the container */
+}
+
+h2 {
+  text-align: center;
+  color: #333;
+}
+
+h3 {
+  color: #555;
+}
+
+div {
+  box-sizing: border-box;
+}
+
+button:hover {
+  opacity: 0.9;
+}
+
+input,
+select {
+  font-size: 14px;
+}
+
+button {
+  transition: background-color 0.3s ease;
+}
+
+.filters-row {
+  display: flex;
+  justify-content: space-between; /* Align items side by side */
+  gap: 20px; /* Add spacing between items */
+  /* margin-bottom: 15px; */
+}
+
+.filter-item {
+  flex: 1; /* Ensure equal width for both items */
+}
