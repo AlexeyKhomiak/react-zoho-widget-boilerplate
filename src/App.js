@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Chart from "chart.js/auto";
 import Papa from "papaparse";
-import "./App.css"; // Import the external CSS file
+import "./App.css";
 
 const CsvLogProcessor = () => {
   const [csvData, setCsvData] = useState(null);
@@ -17,19 +17,28 @@ const CsvLogProcessor = () => {
   const chartInstance = useRef(null);
   const fileInputRef = useRef(null);
 
-  useEffect(() => {
-    const today = new Date().toISOString().split("T")[0];
-    setSelectedDate(today);
-    window.ZOHO.embeddedApp.on("PageLoad", function (data) {
-      console.log("Page loaded with data:", data);
-      window.ZOHO.embeddedApp.init().then(() => {
-        fetchActivities(today); // Fetch activities for the current day
-      });
-    });
+  // useEffect(() => {
+  //   const today = new Date().toISOString().split("T")[0];
+  //   setSelectedDate(today);
 
-    // Fetch activities for the current day immediately
-    fetchActivities(today);
-  }, []);
+  //   // Initialize ZOHO API first, then set up the PageLoad handler
+  //   window.ZOHO.embeddedApp
+  //     .init()
+  //     .then(() => {
+  //       // window.ZOHO.embeddedApp.on("PageLoad", function (data) {
+  //       //   console.log("Page loaded with data:", data);
+  //       //   fetchActivities(today); // Fetch activities for the current day
+  //       // });
+  //       // Fetch activities for the current day immediately after initialization
+  //       fetchActivities(today);
+  //     })
+  //     .catch((error) => {
+  //       console.error("Error initializing ZOHO API:", error);
+  //       setMessage(
+  //         "Error initializing ZOHO API. Please check console for details."
+  //       );
+  //     });
+  // }, []);
 
   useEffect(() => {
     if (activities.length > 0) {
@@ -38,6 +47,8 @@ const CsvLogProcessor = () => {
       ];
       setUsers(uniqueUsers);
       renderChart();
+    } else if (chartRef.current) {
+      renderChart(); // Render chart even if there are no activities
     }
   }, [activities, selectedUser]);
 
@@ -45,8 +56,22 @@ const CsvLogProcessor = () => {
     setLoading(true);
     setMessage("Fetching activities...");
 
-    // Ensure the date format is correct for the API query
-    const formattedDate = new Date(date).toISOString().split("T")[0];
+    // Format the date properly for the API query
+    let formattedDate;
+    try {
+      const dateObj = new Date(date);
+      if (isNaN(dateObj.getTime())) {
+        throw new Error("Invalid date");
+      }
+      formattedDate = dateObj.toISOString().split("T")[0];
+    } catch (error) {
+      console.error("Invalid date format:", error);
+      setMessage("Invalid date format. Please check your input.");
+      setLoading(false);
+      return;
+    }
+
+    console.log("Fetching activities for date:", formattedDate);
 
     window.ZOHO.CRM.API.searchRecord({
       Entity: "Employees_Activities",
@@ -54,7 +79,7 @@ const CsvLogProcessor = () => {
       Query: `(Date:equals:${formattedDate})`,
     })
       .then(function (response) {
-        if (response.data) {
+        if (response && response.data) {
           setActivities(response.data);
           setMessage(
             `Found ${response.data.length} activity records for ${formattedDate}`
@@ -64,14 +89,12 @@ const CsvLogProcessor = () => {
           setMessage(`No activities found for ${formattedDate}`);
         }
         setLoading(false);
-        renderChart(); // Ensure the chart is rendered even if no data is found
       })
       .catch(function (error) {
         console.error("Error fetching records:", error);
         setMessage("Error fetching activity records");
         setLoading(false);
         setActivities([]); // Set empty activities to ensure the chart renders
-        renderChart(); // Ensure the chart is rendered even if an error occurs
       });
   };
 
@@ -166,12 +189,6 @@ const CsvLogProcessor = () => {
       },
     });
   };
-
-  useEffect(() => {
-    if (chartRef.current) {
-      renderChart(); // Ensure the chart is rendered on component mount
-    }
-  }, [chartRef]);
 
   const handleDateChange = (event) => {
     const newDate = event.target.value;
@@ -337,9 +354,6 @@ const CsvLogProcessor = () => {
           <h3 className="section-title">Filters</h3>
           <div className="filters-row">
             <div className="filter-item">
-              {/* <label htmlFor="date-select" className="label">
-                Select Date:
-              </label> */}
               <input
                 type="date"
                 id="date-select"
@@ -349,9 +363,6 @@ const CsvLogProcessor = () => {
               />
             </div>
             <div className="filter-item">
-              {/* <label htmlFor="user-select" className="label">
-                Select User:
-              </label> */}
               <select
                 id="user-select"
                 value={selectedUser}
