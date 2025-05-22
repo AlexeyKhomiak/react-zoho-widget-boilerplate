@@ -4,8 +4,9 @@ import Papa from "papaparse";
 import "./App.css";
 
 const CsvLogProcessor = () => {
-  const [csvData, setCsvData] = useState(null);
+  // const [csvData, setCsvData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [uploadingCsv, setUploadingCsv] = useState(false);
   const [message, setMessage] = useState("");
   const [selectedDate, setSelectedDate] = useState(
     new Date().toISOString().split("T")[0]
@@ -17,29 +18,6 @@ const CsvLogProcessor = () => {
   const chartInstance = useRef(null);
   const fileInputRef = useRef(null);
 
-  // useEffect(() => {
-  //   const today = new Date().toISOString().split("T")[0];
-  //   setSelectedDate(today);
-
-  //   // Initialize ZOHO API first, then set up the PageLoad handler
-  //   window.ZOHO.embeddedApp
-  //     .init()
-  //     .then(() => {
-  //       // window.ZOHO.embeddedApp.on("PageLoad", function (data) {
-  //       //   console.log("Page loaded with data:", data);
-  //       //   fetchActivities(today); // Fetch activities for the current day
-  //       // });
-  //       // Fetch activities for the current day immediately after initialization
-  //       fetchActivities(today);
-  //     })
-  //     .catch((error) => {
-  //       console.error("Error initializing ZOHO API:", error);
-  //       setMessage(
-  //         "Error initializing ZOHO API. Please check console for details."
-  //       );
-  //     });
-  // }, []);
-
   useEffect(() => {
     if (activities.length > 0) {
       const uniqueUsers = [
@@ -48,15 +26,27 @@ const CsvLogProcessor = () => {
       setUsers(uniqueUsers);
       renderChart();
     } else if (chartRef.current) {
-      renderChart(); // Render chart even if there are no activities
+      renderChart();
     }
   }, [activities, selectedUser]);
+
+  const calculateTotalDuration = (activities) => {
+    const durations = activities
+      .map((item) => Number(item.Activity_Duration) || 0)
+      .filter((val) => !isNaN(val));
+    return durations.reduce((sum, val) => sum + val, 0);
+  };
+
+  const formatDuration = (totalMinutes) => {
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return `${hours} hours ${minutes} minutes`;
+  };
 
   const fetchActivities = (date) => {
     setLoading(true);
     setMessage("Fetching activities...");
 
-    // Format the date properly for the API query
     let formattedDate;
     try {
       const dateObj = new Date(date);
@@ -81,11 +71,22 @@ const CsvLogProcessor = () => {
       .then(function (response) {
         if (response && response.data) {
           setActivities(response.data);
+
+          let relevantActivities = response.data;
+          if (selectedUser !== "all") {
+            relevantActivities = response.data.filter(
+              (activity) => activity.User === selectedUser
+            );
+          }
+
+          const totalDuration = calculateTotalDuration(relevantActivities);
+          const formattedDuration = formatDuration(totalDuration);
+
           setMessage(
-            `Found ${response.data.length} activity records for ${formattedDate}`
+            `Activity durations: ${formattedDuration} for ${formattedDate}.`
           );
         } else {
-          setActivities([]); // Set empty activities to ensure the chart renders
+          setActivities([]);
           setMessage(`No activities found for ${formattedDate}`);
         }
         setLoading(false);
@@ -94,7 +95,7 @@ const CsvLogProcessor = () => {
         console.error("Error fetching records:", error);
         setMessage("Error fetching activity records");
         setLoading(false);
-        setActivities([]); // Set empty activities to ensure the chart renders
+        setActivities([]);
       });
   };
 
@@ -194,17 +195,34 @@ const CsvLogProcessor = () => {
     const newDate = event.target.value;
     setSelectedDate(newDate);
 
-    // Ensure the date is passed correctly to fetchActivities
     fetchActivities(newDate);
   };
 
   const handleUserChange = (event) => {
-    setSelectedUser(event.target.value);
+    const newSelectedUser = event.target.value;
+    setSelectedUser(newSelectedUser);
+
+    if (activities.length > 0) {
+      let relevantActivities = activities;
+      if (newSelectedUser !== "all") {
+        relevantActivities = activities.filter(
+          (activity) => activity.User === newSelectedUser
+        );
+      }
+
+      const totalDuration = calculateTotalDuration(relevantActivities);
+      const formattedDuration = formatDuration(totalDuration);
+
+      setMessage(
+        `Activity durations: ${formattedDuration} for ${selectedDate}.`
+      );
+    }
   };
 
   const processCSV = (csvData) => {
     const activityLog = {};
     const userMap = {};
+    const activityDurations = {};
 
     Papa.parse(csvData, {
       complete: (result) => {
@@ -230,7 +248,6 @@ const CsvLogProcessor = () => {
           const module =
             moduleIndex !== -1 ? cols[moduleIndex]?.trim() || "" : "";
 
-          // Skip rows with specific executor values or when module is "Deluge"
           if (
             executor === "Anton Kovalenko" ||
             executor === "" ||
@@ -247,14 +264,15 @@ const CsvLogProcessor = () => {
             return;
           }
 
-          const date = timestamp.split(" ")[0]; // Extract the date from the timestamp
-          const [day, month, year] = date.split("."); // Split the date into day, month, year
-          const formattedDate = `${year}-${month}-${day}`; // Format the date as yyyy-mm-dd
+          const date = timestamp.split(" ")[0];
+          const [day, month, year] = date.split(".");
+          const formattedDate = `${year}-${month}-${day}`;
           const timeSlot = timestamp.split(" ")[1].substring(0, 5);
 
           if (!activityLog[user]) {
             activityLog[user] = {};
-            userMap[user] = { executor, date: formattedDate }; // Store the executor/user relationship and formatted date
+            userMap[user] = { executor, date: formattedDate };
+            activityDurations[user] = 0;
           }
 
           const slot = Math.floor(parseInt(timeSlot.split(":")[1]) / 10) * 10;
@@ -265,29 +283,34 @@ const CsvLogProcessor = () => {
           activityLog[user][roundedTime] =
             (activityLog[user][roundedTime] || 0) + 1;
         });
+
+        for (const user in activityLog) {
+          activityDurations[user] = Object.keys(activityLog[user]).length * 10;
+        }
       },
       delimiter: ",",
       quoteChar: '"',
       skipEmptyLines: true,
     });
 
-    return { activityLog, userMap };
+    return { activityLog, userMap, activityDurations };
   };
 
   const saveToCustomModule = (activityLogResult) => {
-    const { activityLog, userMap } = activityLogResult;
+    const { activityLog, userMap, activityDurations } = activityLogResult;
 
     const records = Object.keys(activityLog).map((user) => ({
       Name: `${userMap[user].date} - ${user}`,
-      Date: userMap[user].date, // Use the date from the CSV file
+      Date: userMap[user].date,
       Activity: JSON.stringify(activityLog[user]),
-      User: userMap[user].executor, // Store the executor in the User field
+      User: userMap[user].executor,
+      Activity_Duration: activityDurations[user],
     }));
 
     window.ZOHO.CRM.API.upsertRecord({
       Entity: "Employees_Activities",
       APIData: records,
-      duplicate_check_fields: ["Name"], // Use the Name field to check for duplicates
+      duplicate_check_fields: ["Name"],
       Trigger: [],
     })
       .then(function (response) {
@@ -303,6 +326,7 @@ const CsvLogProcessor = () => {
     const file = fileInputRef.current.files[0];
     if (file) {
       setLoading(true);
+      setUploadingCsv(true);
       setMessage("Processing file...");
 
       const reader = new FileReader();
@@ -320,11 +344,13 @@ const CsvLogProcessor = () => {
           );
         } finally {
           setLoading(false);
+          setUploadingCsv(false);
         }
       };
 
       reader.onerror = () => {
         setLoading(false);
+        setUploadingCsv(false);
         setMessage("Error reading file.");
       };
 
@@ -345,9 +371,16 @@ const CsvLogProcessor = () => {
             ref={fileInputRef}
             className="input"
           />
-          <button onClick={handleCSVUpload} className="button button-upload">
-            Upload CSV
-          </button>
+          <div className="upload-button-container">
+            <button
+              onClick={handleCSVUpload}
+              className="button button-upload"
+              disabled={uploadingCsv}
+            >
+              Upload CSV
+            </button>
+            {uploadingCsv && <div className="loader"></div>}
+          </div>
         </div>
 
         <div className="filters-container small-card">
