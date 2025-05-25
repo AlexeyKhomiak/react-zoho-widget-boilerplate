@@ -14,20 +14,43 @@ const CsvLogProcessor = () => {
   const [activities, setActivities] = useState([]);
   const [users, setUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState("all");
+  const [userGroups, setUserGroups] = useState([]);
   const chartRef = useRef(null);
   const chartInstance = useRef(null);
   const fileInputRef = useRef(null);
+  useEffect(() => {
+    const executeCustomFunction = () => {
+      const func_name = "GetUsersGroups";
+      const req_data = {};
+
+      window.ZOHO.CRM.FUNCTIONS.execute(func_name, req_data)
+        .then(function (data) {
+          console.log("GetUsersGroups", data);
+          if (data && data.user_groups) {
+            setUserGroups(data.user_groups);
+          }
+        })
+        .catch(function (error) {
+          console.error("Error executing GetUsersGroups function:", error);
+        });
+    };
+
+    executeCustomFunction();
+  }, []);
 
   useEffect(() => {
     if (activities.length > 0) {
       const uniqueUsers = [
-        ...new Set(activities.map((activity) => activity.User || "Unknown")),
+        ...new Set(
+          activities.map((activity) => activity.Participant || "Unknown")
+        ),
       ];
       setUsers(uniqueUsers);
       renderChart();
     } else if (chartRef.current) {
       renderChart();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activities, selectedUser]);
 
   const calculateTotalDuration = (activities) => {
@@ -69,13 +92,19 @@ const CsvLogProcessor = () => {
       Query: `(Date:equals:${formattedDate})`,
     })
       .then(function (response) {
+        console.log("searchRecord response:", response);
         if (response && response.data) {
           setActivities(response.data);
 
           let relevantActivities = response.data;
           if (selectedUser !== "all") {
             relevantActivities = response.data.filter(
-              (activity) => activity.User === selectedUser
+              (activity) => activity.Participant === selectedUser
+            );
+          } else {
+            // Filter out Group records when All Users is selected
+            relevantActivities = response.data.filter(
+              (activity) => activity.Record_Type !== "Group"
             );
           }
 
@@ -123,7 +152,7 @@ const CsvLogProcessor = () => {
       const filteredActivities =
         selectedUser === "all"
           ? activities
-          : activities.filter((record) => record.User === selectedUser);
+          : activities.filter((record) => record.Participant === selectedUser);
 
       filteredActivities.forEach((record) => {
         try {
@@ -206,7 +235,12 @@ const CsvLogProcessor = () => {
       let relevantActivities = activities;
       if (newSelectedUser !== "all") {
         relevantActivities = activities.filter(
-          (activity) => activity.User === newSelectedUser
+          (activity) => activity.Participant === newSelectedUser
+        );
+      } else {
+        // Filter out Group records when All Users is selected
+        relevantActivities = activities.filter(
+          (activity) => activity.Record_Type !== "Group"
         );
       }
 
@@ -218,11 +252,32 @@ const CsvLogProcessor = () => {
       );
     }
   };
-
   const processCSV = (csvData) => {
-    const activityLog = {};
-    const userMap = {};
-    const activityDurations = {};
+    const activities = {};
+    const groupActivities = {};
+
+    // Helper function to find user's group
+    const findUserGroup = (executorName) => {
+      if (!userGroups || !userGroups.length) return null;
+
+      for (const group of userGroups) {
+        if (!group.users || !group.users.length) continue;
+
+        const user = group.users.find((user) => {
+          const fullName = `${user.first_name} ${user.last_name}`;
+          return fullName === executorName || user.full_name === executorName;
+        });
+
+        if (user) {
+          return {
+            groupId: group.id,
+            groupName: group.name,
+            userId: user.id,
+          };
+        }
+      }
+      return null;
+    };
 
     Papa.parse(csvData, {
       complete: (result) => {
@@ -269,10 +324,17 @@ const CsvLogProcessor = () => {
           const formattedDate = `${year}-${month}-${day}`;
           const timeSlot = timestamp.split(" ")[1].substring(0, 5);
 
-          if (!activityLog[user]) {
-            activityLog[user] = {};
-            userMap[user] = { executor, date: formattedDate };
-            activityDurations[user] = 0;
+          // Find user's group information
+          const userGroupInfo = findUserGroup(executor);
+
+          // Process individual user activity
+          if (!activities[user]) {
+            activities[user] = {
+              log: {},
+              executor: executor,
+              date: formattedDate,
+              duration: 0,
+            };
           }
 
           const slot = Math.floor(parseInt(timeSlot.split(":")[1]) / 10) * 10;
@@ -280,12 +342,40 @@ const CsvLogProcessor = () => {
             .toString()
             .padStart(2, "0")}`;
 
-          activityLog[user][roundedTime] =
-            (activityLog[user][roundedTime] || 0) + 1;
+          activities[user].log[roundedTime] =
+            (activities[user].log[roundedTime] || 0) + 1;
+
+          // If user belongs to a group, add activity to group as well
+          if (userGroupInfo) {
+            const groupKey = userGroupInfo.groupId;
+
+            if (!groupActivities[groupKey]) {
+              groupActivities[groupKey] = {
+                log: {},
+                groupName: userGroupInfo.groupName,
+                date: formattedDate,
+                duration: 0,
+              };
+            }
+
+            // Add activity to group log
+            if (!groupActivities[groupKey].log[roundedTime]) {
+              groupActivities[groupKey].log[roundedTime] = 0;
+            }
+            groupActivities[groupKey].log[roundedTime] += 1;
+          }
         });
 
-        for (const user in activityLog) {
-          activityDurations[user] = Object.keys(activityLog[user]).length * 10;
+        // Calculate durations for individual users
+        for (const user in activities) {
+          activities[user].duration =
+            Object.keys(activities[user].log).length * 10;
+        }
+
+        // Calculate durations for groups
+        for (const groupId in groupActivities) {
+          groupActivities[groupId].duration =
+            Object.keys(groupActivities[groupId].log).length * 10;
         }
       },
       delimiter: ",",
@@ -293,23 +383,36 @@ const CsvLogProcessor = () => {
       skipEmptyLines: true,
     });
 
-    return { activityLog, userMap, activityDurations };
+    return { userActivities: activities, groupActivities: groupActivities };
   };
-
-  const saveToCustomModule = (activityLogResult) => {
-    const { activityLog, userMap, activityDurations } = activityLogResult;
-
-    const records = Object.keys(activityLog).map((user) => ({
-      Name: `${userMap[user].date} - ${user}`,
-      Date: userMap[user].date,
-      Activity: JSON.stringify(activityLog[user]),
-      User: userMap[user].executor,
-      Activity_Duration: activityDurations[user],
+  const saveToCustomModule = ({ userActivities, groupActivities }) => {
+    // Process user records
+    const userRecords = Object.keys(userActivities).map((user) => ({
+      Name: `${userActivities[user].date} - ${user}`,
+      Date: userActivities[user].date,
+      Activity: JSON.stringify(userActivities[user].log),
+      Participant: userActivities[user].executor,
+      Activity_Duration: userActivities[user].duration,
+      Record_Type: "User",
     }));
+
+    // Process group records
+    const groupRecords = Object.keys(groupActivities).map((groupId) => ({
+      Name: `${groupActivities[groupId].date} - Group: ${groupActivities[groupId].groupName}`,
+      Date: groupActivities[groupId].date,
+      Activity: JSON.stringify(groupActivities[groupId].log),
+      Participant: groupActivities[groupId].groupName,
+      Activity_Duration: groupActivities[groupId].duration,
+      Record_Type: "Group",
+      Group_ID: groupId,
+    }));
+
+    // Combine both types of records
+    const allRecords = [...userRecords, ...groupRecords];
 
     window.ZOHO.CRM.API.upsertRecord({
       Entity: "Employees_Activities",
-      APIData: records,
+      APIData: allRecords,
       duplicate_check_fields: ["Name"],
       Trigger: [],
     })
@@ -333,9 +436,10 @@ const CsvLogProcessor = () => {
       reader.onload = (e) => {
         try {
           const csvData = e.target.result;
-          const activityLogResult = processCSV(csvData);
+          const activities = processCSV(csvData);
+          console.log("Processed activities:", activities);
           setMessage("Saving data to CRM...");
-          saveToCustomModule(activityLogResult);
+          saveToCustomModule(activities);
           setMessage("Data uploaded successfully!");
         } catch (error) {
           console.error("Error processing file:", error);
