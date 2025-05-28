@@ -278,7 +278,6 @@ const CsvLogProcessor = () => {
       }
       return null;
     };
-
     Papa.parse(csvData, {
       complete: (result) => {
         const rows = result.data;
@@ -293,21 +292,29 @@ const CsvLogProcessor = () => {
           (header) => header.trim().toLowerCase() === "модуль".toLowerCase()
         );
 
+        const actionColumnIndex = headers.findIndex(
+          (header) => header.trim().toLowerCase() === "действие".toLowerCase()
+        );
+
         const executorIndex =
           executorColumnIndex !== -1 ? executorColumnIndex : 6;
 
         const moduleIndex = moduleColumnIndex !== -1 ? moduleColumnIndex : -1;
 
+        const actionIndex = actionColumnIndex !== -1 ? actionColumnIndex : -1;
         rows.forEach((cols) => {
           const executor = cols[executorIndex]?.trim() || "";
           const module =
             moduleIndex !== -1 ? cols[moduleIndex]?.trim() || "" : "";
+          const action =
+            actionIndex !== -1 ? cols[actionIndex]?.trim() || "" : "";
 
           if (
             executor === "Anton Kovalenko" ||
             executor === "" ||
             executor === "System Workflow" ||
-            module === "Deluge"
+            module === "Deluge" ||
+            (actionIndex !== -1 && action === "Подписка отменена")
           ) {
             return;
           }
@@ -418,7 +425,7 @@ const CsvLogProcessor = () => {
     })
       .then(function (response) {
         console.log("Records upserted:", response);
-        fetchActivities(selectedDate);
+        // fetchActivities(selectedDate);
       })
       .catch(function (error) {
         console.error("Error upserting records:", error);
