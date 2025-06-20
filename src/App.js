@@ -151,7 +151,7 @@ const CsvLogProcessor = () => {
     if (activities.length > 0) {
       const filteredActivities =
         selectedUser === "all"
-          ? activities
+          ? activities.filter((record) => record.Record_Type !== "Group")
           : activities.filter((record) => record.Participant === selectedUser);
 
       filteredActivities.forEach((record) => {
