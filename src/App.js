@@ -87,7 +87,7 @@ const CsvLogProcessor = () => {
     console.log("Fetching activities for date:", formattedDate);
 
     window.ZOHO.CRM.API.searchRecord({
-      Entity: "Employees_Activities",
+      Entity: "Users_Activities",
       Type: "criteria",
       Query: `(Date:equals:${formattedDate})`,
     })
@@ -319,7 +319,6 @@ const CsvLogProcessor = () => {
             return;
           }
 
-          const user = cols[0].trim();
           const timestamp = cols[7].trim();
 
           if (!timestamp || !timestamp.split(" ")[1]) {
@@ -334,9 +333,12 @@ const CsvLogProcessor = () => {
           // Find user's group information
           const userGroupInfo = findUserGroup(executor);
 
+          // Create unique key combining user and date
+          const userDateKey = `${formattedDate}_${executor}`;
+
           // Process individual user activity
-          if (!activities[user]) {
-            activities[user] = {
+          if (!activities[userDateKey]) {
+            activities[userDateKey] = {
               log: {},
               executor: executor,
               date: formattedDate,
@@ -349,40 +351,42 @@ const CsvLogProcessor = () => {
             .toString()
             .padStart(2, "0")}`;
 
-          activities[user].log[roundedTime] =
-            (activities[user].log[roundedTime] || 0) + 1;
+          activities[userDateKey].log[roundedTime] =
+            (activities[userDateKey].log[roundedTime] || 0) + 1;
 
           // If user belongs to a group, add activity to group as well
           if (userGroupInfo) {
-            const groupKey = userGroupInfo.groupId;
+            // Create unique key combining group and date
+            const groupDateKey = `${formattedDate}_${userGroupInfo.groupId}`;
 
-            if (!groupActivities[groupKey]) {
-              groupActivities[groupKey] = {
+            if (!groupActivities[groupDateKey]) {
+              groupActivities[groupDateKey] = {
                 log: {},
                 groupName: userGroupInfo.groupName,
                 date: formattedDate,
                 duration: 0,
+                groupId: userGroupInfo.groupId,
               };
             }
 
             // Add activity to group log
-            if (!groupActivities[groupKey].log[roundedTime]) {
-              groupActivities[groupKey].log[roundedTime] = 0;
+            if (!groupActivities[groupDateKey].log[roundedTime]) {
+              groupActivities[groupDateKey].log[roundedTime] = 0;
             }
-            groupActivities[groupKey].log[roundedTime] += 1;
+            groupActivities[groupDateKey].log[roundedTime] += 1;
           }
         });
 
         // Calculate durations for individual users
-        for (const user in activities) {
-          activities[user].duration =
-            Object.keys(activities[user].log).length * 10;
+        for (const userDateKey in activities) {
+          activities[userDateKey].duration =
+            Object.keys(activities[userDateKey].log).length * 10;
         }
 
         // Calculate durations for groups
-        for (const groupId in groupActivities) {
-          groupActivities[groupId].duration =
-            Object.keys(groupActivities[groupId].log).length * 10;
+        for (const groupDateKey in groupActivities) {
+          groupActivities[groupDateKey].duration =
+            Object.keys(groupActivities[groupDateKey].log).length * 10;
         }
       },
       delimiter: ",",
@@ -394,31 +398,34 @@ const CsvLogProcessor = () => {
   };
   const saveToCustomModule = ({ userActivities, groupActivities }) => {
     // Process user records
-    const userRecords = Object.keys(userActivities).map((user) => ({
-      Name: `${userActivities[user].date} - ${user}`,
-      Date: userActivities[user].date,
-      Activity: JSON.stringify(userActivities[user].log),
-      Participant: userActivities[user].executor,
-      Activity_Duration: userActivities[user].duration,
+    const userRecords = Object.keys(userActivities).map((userDateKey) => ({
+      Name: `${userActivities[userDateKey].date} - ${userActivities[userDateKey].executor}`,
+      Date: userActivities[userDateKey].date,
+      Activity: JSON.stringify(userActivities[userDateKey].log),
+      Participant: userActivities[userDateKey].executor,
+      Activity_Duration: userActivities[userDateKey].duration,
       Record_Type: "User",
     }));
 
     // Process group records
-    const groupRecords = Object.keys(groupActivities).map((groupId) => ({
-      Name: `${groupActivities[groupId].date} - Group: ${groupActivities[groupId].groupName}`,
-      Date: groupActivities[groupId].date,
-      Activity: JSON.stringify(groupActivities[groupId].log),
-      Participant: groupActivities[groupId].groupName,
-      Activity_Duration: groupActivities[groupId].duration,
-      Record_Type: "Group",
-      Group_ID: groupId,
-    }));
+    const groupRecords = Object.keys(groupActivities).map((groupDateKey) => {
+      const groupData = groupActivities[groupDateKey];
+      return {
+        Name: `${groupData.date} - ${groupData.groupName}`,
+        Date: groupData.date,
+        Activity: JSON.stringify(groupData.log),
+        Participant: groupData.groupName,
+        Activity_Duration: groupData.duration,
+        Record_Type: "Group",
+        Group_ID: groupData.groupId,
+      };
+    });
 
     // Combine both types of records
     const allRecords = [...userRecords, ...groupRecords];
 
     window.ZOHO.CRM.API.upsertRecord({
-      Entity: "Employees_Activities",
+      Entity: "Users_Activities",
       APIData: allRecords,
       duplicate_check_fields: ["Name"],
       Trigger: [],
