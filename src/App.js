@@ -4,9 +4,10 @@ import Papa from "papaparse";
 import "./App.css";
 
 const CsvLogProcessor = () => {
-  // const [csvData, setCsvData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [uploadingCsv, setUploadingCsv] = useState(false);
+  const [verifyingData, setVerifyingData] = useState(false);
+  const [verificationCountdown, setVerificationCountdown] = useState(0);
   const [message, setMessage] = useState("");
   const [selectedDate, setSelectedDate] = useState(
     new Date().toISOString().split("T")[0]
@@ -67,9 +68,11 @@ const CsvLogProcessor = () => {
   };
 
   // Helper function to search records in Zoho CRM
-  const searchRecords = async (entity, query) => {
+  const searchRecords = async (entity, query, silent = false) => {
     try {
-      setMessage(`Searching ${entity} records...`);
+      if (!silent) {
+        setMessage(`Searching ${entity} records...`);
+      }
       const response = await window.ZOHO.CRM.API.searchRecord({
         Entity: entity,
         Type: "criteria",
@@ -78,7 +81,9 @@ const CsvLogProcessor = () => {
       return response?.data || [];
     } catch (error) {
       console.error(`Error searching ${entity} records:`, error);
-      setMessage(`Error searching ${entity} records`);
+      if (!silent) {
+        setMessage(`Error searching ${entity} records`);
+      }
       return [];
     }
   };
@@ -697,13 +702,72 @@ const CsvLogProcessor = () => {
         return upsertRecords("Users_Activities", allRecords);
       })
       .then(() => {
-        setMessage("Data uploaded and merged successfully!");
-        // Optionally refresh the current view
-        // fetchActivities(selectedDate);
+        setMessage("Data uploaded successfully! Verifying...");
+
+        const firstDate = uniqueDates[0];
+        return verifyDataSaved(firstDate);
+      })
+      .then(() => {
+        fetchActivities(selectedDate);
       })
       .catch((error) => {
-        // Error handling is done in the upsertRecords function
+        console.error("Error in save process:", error);
+        if (!verifyingData) {
+          setMessage(`Error: ${error.message || "Could not save data"}`);
+        }
       });
+  };
+
+  // Data verification function
+  const verifyDataSaved = async (searchDate, maxRetries = 90) => {
+    setVerifyingData(true);
+    setVerificationCountdown(maxRetries);
+
+    let retries = 0;
+
+    return new Promise((resolve, reject) => {
+      const checkInterval = setInterval(async () => {
+        try {
+          const remainingTime = maxRetries - retries;
+          setVerificationCountdown(remainingTime);
+
+          const searchQuery = `(Date:equals:${searchDate})`;
+          const response = await searchRecords(
+            "Users_Activities",
+            searchQuery,
+            true
+          );
+
+          if (response && response.length > 0) {
+            clearInterval(checkInterval);
+            setVerifyingData(false);
+            setVerificationCountdown(0);
+            setMessage("Data successfully saved and verified!");
+            resolve(response);
+          } else if (retries >= maxRetries) {
+            clearInterval(checkInterval);
+            setVerifyingData(false);
+            setVerificationCountdown(0);
+            setMessage("Verification timeout. Data might not have been saved.");
+            reject(new Error("Verification timeout"));
+          }
+
+          retries++;
+        } catch (error) {
+          retries++;
+          const remainingTime = maxRetries - retries;
+          setVerificationCountdown(remainingTime);
+
+          if (retries >= maxRetries) {
+            clearInterval(checkInterval);
+            setVerifyingData(false);
+            setVerificationCountdown(0);
+            setMessage("Error during data verification.");
+            reject(error);
+          }
+        }
+      }, 2000);
+    });
   };
 
   const handleCSVUpload = () => {
@@ -775,11 +839,11 @@ const CsvLogProcessor = () => {
             <button
               onClick={handleCSVUpload}
               className="button button-upload"
-              disabled={uploadingCsv}
+              disabled={uploadingCsv || verifyingData}
             >
               Upload CSV
             </button>
-            {uploadingCsv && <div className="loader"></div>}
+            {(uploadingCsv || verifyingData) && <div className="loader"></div>}
           </div>
         </div>
 
@@ -821,7 +885,12 @@ const CsvLogProcessor = () => {
       </div>
 
       {loading && <p className="message">Loading...</p>}
-      {message && <p className="message">{message}</p>}
+      {verifyingData && (
+        <p className="message verification-message">
+          🔄 Verifying data save... ({verificationCountdown}s)
+        </p>
+      )}
+      {!verifyingData && message && <p className="message">{message}</p>}
 
       <div className="chart-container">
         <canvas ref={chartRef}></canvas>
