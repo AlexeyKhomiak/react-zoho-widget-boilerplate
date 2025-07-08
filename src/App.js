@@ -696,16 +696,26 @@ const CsvLogProcessor = () => {
         // Combine both types of records
         const allRecords = [...userRecords, ...groupRecords];
 
+        // Check if there are any new records (without id) - these will be inserts
+        const hasInsertOperations = allRecords.some((record) => !record.id);
+
         setMessage("Saving merged activities to CRM...");
 
         // Use the extracted function for upserting records
-        return upsertRecords("Users_Activities", allRecords);
+        return upsertRecords("Users_Activities", allRecords).then((result) => {
+          return { result, hasInserts: hasInsertOperations };
+        });
       })
-      .then(() => {
-        setMessage("Data uploaded successfully! Verifying...");
-
-        const firstDate = uniqueDates[0];
-        return verifyDataSaved(firstDate);
+      .then(({ result, hasInserts }) => {
+        if (hasInserts) {
+          // If there are insert operations, start 60-second countdown without verification
+          setMessage("Data uploaded successfully! Processing...");
+          return startProcessingCountdown();
+        } else {
+          // For updates only, show immediate success
+          setMessage("Data updated successfully!");
+          return Promise.resolve();
+        }
       })
       .then(() => {
         fetchActivities(selectedDate);
@@ -718,55 +728,26 @@ const CsvLogProcessor = () => {
       });
   };
 
-  // Data verification function
-  const verifyDataSaved = async (searchDate, maxRetries = 90) => {
+  // Function to handle insert operations countdown without verification
+  const startProcessingCountdown = () => {
     setVerifyingData(true);
-    setVerificationCountdown(maxRetries);
+    setVerificationCountdown(60);
 
-    let retries = 0;
+    return new Promise((resolve) => {
+      let countdown = 60;
 
-    return new Promise((resolve, reject) => {
-      const checkInterval = setInterval(async () => {
-        try {
-          const remainingTime = maxRetries - retries;
-          setVerificationCountdown(remainingTime);
+      const countdownInterval = setInterval(() => {
+        countdown--;
+        setVerificationCountdown(countdown);
 
-          const searchQuery = `(Date:equals:${searchDate})`;
-          const response = await searchRecords(
-            "Users_Activities",
-            searchQuery,
-            true
-          );
-
-          if (response && response.length > 0) {
-            clearInterval(checkInterval);
-            setVerifyingData(false);
-            setVerificationCountdown(0);
-            setMessage("Data successfully saved and verified!");
-            resolve(response);
-          } else if (retries >= maxRetries) {
-            clearInterval(checkInterval);
-            setVerifyingData(false);
-            setVerificationCountdown(0);
-            setMessage("Verification timeout. Data might not have been saved.");
-            reject(new Error("Verification timeout"));
-          }
-
-          retries++;
-        } catch (error) {
-          retries++;
-          const remainingTime = maxRetries - retries;
-          setVerificationCountdown(remainingTime);
-
-          if (retries >= maxRetries) {
-            clearInterval(checkInterval);
-            setVerifyingData(false);
-            setVerificationCountdown(0);
-            setMessage("Error during data verification.");
-            reject(error);
-          }
+        if (countdown <= 0) {
+          clearInterval(countdownInterval);
+          setVerifyingData(false);
+          setVerificationCountdown(0);
+          setMessage("Data processing completed!");
+          resolve();
         }
-      }, 2000);
+      }, 1000); // Update every second
     });
   };
 
@@ -887,7 +868,7 @@ const CsvLogProcessor = () => {
       {loading && <p className="message">Loading...</p>}
       {verifyingData && (
         <p className="message verification-message">
-          🔄 Verifying data save... ({verificationCountdown}s)
+          🔄 Processing data... ({verificationCountdown}s)
         </p>
       )}
       {!verifyingData && message && <p className="message">{message}</p>}

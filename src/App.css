@@ -209,7 +209,7 @@ h3 {
   left: 0;
   height: 3px;
   background-color: #007bff;
-  animation: countdown 90s linear forwards;
+  animation: countdown 60s linear forwards;
 }
 
 @keyframes countdown {
